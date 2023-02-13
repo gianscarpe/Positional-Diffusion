@@ -48,7 +48,7 @@ import wandb
 
 from .backbones import Dark_TFConv, Eff_GAT
 
-# matplotlib.use("agg")
+matplotlib.use("agg")
 
 
 class ModelMeanType(enum.Enum):
