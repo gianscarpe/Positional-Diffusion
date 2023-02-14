@@ -104,14 +104,20 @@ class Puzzle_Dataset(pyg_data.Dataset):
         xy, patches = divide_images_into_patches(img, patch_per_dim, self.patch_size)
 
         xy = einops.rearrange(xy, "x y c -> (x y) c")
+
+        indexes = torch.arange(patch_per_dim[0] * patch_per_dim[1]).reshape(
+            xy.shape[:-1]
+        )
         patches = einops.rearrange(patches, "x y c k1 k2 -> (x y) c k1 k2")
 
         adj_mat = torch.ones(
             patch_per_dim[0] * patch_per_dim[1], patch_per_dim[0] * patch_per_dim[1]
         )
         edge_index, edge_attr = pyg.utils.dense_to_sparse(adj_mat)
+
         data = pyg_data.Data(
             x=xy,
+            indexes=indexes,
             patches=patches,
             edge_index=edge_index,
             ind_name=torch.tensor([idx]).long(),
