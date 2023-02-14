@@ -12,8 +12,9 @@ import random
 import string
 
 import pytorch_lightning as pl
-from dataset.dataset_utils import get_dataset, get_dataset_ROT
+from dataset import dataset_utils as du
 from model import spatial_diffusion as sd
+from model import spatial_diffusion_discrete as sdd
 from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 from pytorch_lightning.loggers import WandbLogger
 
@@ -44,15 +45,16 @@ def main(
     checkpoint_path,
     rotation,
     predict_xstart,
+    discrete,
 ):
     ### Define dataset
 
     if rotation:
-        train_dt, test_dt, puzzle_sizes = get_dataset_ROT(
+        train_dt, test_dt, puzzle_sizes = du.get_dataset_ROT(
             dataset=dataset, puzzle_sizes=puzzle_sizes, augment=data_augmentation
         )
     else:
-        train_dt, test_dt, puzzle_sizes = get_dataset(
+        train_dt, test_dt, puzzle_sizes = du.get_dataset(
             dataset=dataset, puzzle_sizes=puzzle_sizes, augment=data_augmentation
         )
 
@@ -67,18 +69,32 @@ def main(
     if sampling == "DDPM":
         inference_ratio = 1
 
-    model = sd.GNN_Diffusion(
-        steps=steps,
-        sampling=sampling,
-        inference_ratio=inference_ratio,
-        classifier_free_w=classifier_free_w,
-        classifier_free_prob=classifier_free_prob,
-        noise_weight=noise_weight,
-        rotation=rotation,
-        model_mean_type=sd.ModelMeanType.EPISLON
-        if not predict_xstart
-        else sd.ModelMeanType.START_X,
-    )
+    if discrete:
+        model = sdd.GNN_Diffusion(
+            steps=steps,
+            sampling=sampling,
+            inference_ratio=inference_ratio,
+            classifier_free_w=classifier_free_w,
+            classifier_free_prob=classifier_free_prob,
+            noise_weight=noise_weight,
+            rotation=rotation,
+            model_mean_type=sd.ModelMeanType.START_X,
+            puzzle_sizes=puzzle_sizes,
+        )
+    else:
+        model = sd.GNN_Diffusion(
+            steps=steps,
+            sampling=sampling,
+            inference_ratio=inference_ratio,
+            classifier_free_w=classifier_free_w,
+            classifier_free_prob=classifier_free_prob,
+            noise_weight=noise_weight,
+            rotation=rotation,
+            model_mean_type=sd.ModelMeanType.EPISLON
+            if not predict_xstart
+            else sd.ModelMeanType.START_X,
+        )
+
     model.initialize_torchmetrics(puzzle_sizes)
 
     ### define training
@@ -112,6 +128,7 @@ def main(
         strategy="ddp" if gpus > 1 else None,
         check_val_every_n_epoch=5,
         logger=wandb_logger,
+        num_sanity_val_steps=2,
         callbacks=[checkpoint_callback, ModelSummary(max_depth=2)],
     )
 
@@ -142,7 +159,7 @@ if __name__ == "__main__":
     ap.add_argument("--noise_weight", type=float, default=0.0)
     ap.add_argument("--predict_xstart", type=bool, default=False)
     ap.add_argument("--rotation", type=bool, default=False)
-
+    ap.add_argument("--discrete", type=bool, default=False)
     args = ap.parse_args()
     print(args)
     main(
@@ -162,4 +179,5 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
         rotation=args.rotation,
         predict_xstart=args.predict_xstart,
+        discrete=args.discrete,
     )

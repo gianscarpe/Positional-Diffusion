@@ -195,6 +195,8 @@ class GNN_Diffusion(pl.LightningModule):
         noise_weight=0.0,
         rotation=False,
         model_mean_type: ModelMeanType = ModelMeanType.EPSILON,
+        input_channels=2,
+        output_channels=2,
         *args,
         **kwargs,
     ) -> None:
@@ -261,13 +263,26 @@ class GNN_Diffusion(pl.LightningModule):
         self.register_buffer("posterior_variance", posterior_variance)
 
         self.steps = steps
+        self.input_channels = input_channels
+        self.output_channels = output_channels
 
-        ### BACKBONE
-        self.model = Eff_GAT(steps=steps, input_channels=2, output_channels=2)
-        if self.rotation:
-            self.model = Eff_GAT(steps=steps, input_channels=4, output_channels=4)
+        self.init_backbone()
 
         self.save_hyperparameters()
+
+    def init_backbone(self):
+
+        self.model = Eff_GAT(
+            steps=self.steps,
+            input_channels=self.input_channels,
+            output_channels=self.output_channels,
+        )
+        if self.rotation:
+            self.model = Eff_GAT(
+                steps=self.steps,
+                input_channels=self.input_channels + 2,
+                output_channels=self.output_channels + 2,
+            )
 
     def initialize_torchmetrics(self, n_patches):
         metrics = {}
