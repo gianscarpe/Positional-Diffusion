@@ -65,10 +65,6 @@ def main(
         test_dt, batch_size=batch_size, num_workers=num_workers, shuffle=False
     )
 
-    ## DEFINE MODEL
-    if sampling == "DDPM":
-        inference_ratio = 1
-
     if discrete:
         model = sdd.GNN_Diffusion(
             steps=steps,

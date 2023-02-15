@@ -69,6 +69,9 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             ) / self.K
             Qs.append(Q_t)
 
+        self.register_buffer("Q_onestep", torch.stack(Qs))
+        self.register_buffer("Q_onestep_transpose", torch.stack(Qs).transpose(1, 2))
+
         self.register_buffer(
             "overline_Q", torch.stack(matrix_cumprod(torch.stack(Qs), 0))
         )
@@ -147,22 +150,27 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         return loss
 
     # forward diffusion
-    def q_sample(self, x_start, t):
-        Q_t = self.overline_Q[t]
-        result = torch.bmm(x_start.float().unsqueeze(1), Q_t)
+    def q_sample(self, x_start, t, eps=1e-9):
 
-        return result.squeeze()
+        noise = torch.rand(size=x_start.shape).to(x_start.device)
+
+        Q_t = self.overline_Q[t]
+
+        q_logits = torch.log(
+            torch.bmm(x_start.float().unsqueeze(1), Q_t) + eps
+        ).squeeze()
+
+        return torch.argmax(q_logits - torch.log(-torch.log(noise)), -1)
 
     def q_posterior_logits(self, x_t, x_start_logits, t, previous_t, eps=1e-8):
-
-        Q_t = self.overline_Q[t]
+        Q_ksteps_transpose = (
+            self.overline_Q[t] @ torch.linalg.inv(self.overline_Q[previous_t])
+        ).transpose(1, 2)
         Q_previous_t = self.overline_Q[previous_t]
-
-        fact1 = torch.bmm(F.one_hot(x_t, self.K).float().unsqueeze(1), Q_t)
-        fact2 = torch.bmm(
-            x_start_logits.unsqueeze(1),
-            Q_previous_t.transpose(2, 1),
+        fact1 = torch.bmm(
+            F.one_hot(x_t, self.K).float().unsqueeze(1), Q_ksteps_transpose
         )
+        fact2 = torch.bmm(F.softmax(x_start_logits).unsqueeze(1), Q_previous_t)
 
         out = torch.log(fact1 + eps) + torch.log(fact2 + eps)
 
@@ -182,8 +190,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
     ):
         x_start_one_hot = torch.nn.functional.one_hot(x_start)
 
-        x_noisy_prob = self.q_sample(x_start=x_start_one_hot, t=t)
-        x_noisy = torch.argmax(x_noisy_prob, -1)
+        x_noisy = self.q_sample(x_start=x_start_one_hot, t=t)
 
         if self.rotation:
             cond = rotate_images(cond, x_noisy[:, -2:])
@@ -205,6 +212,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             patch_feats=classifier_free_patch_feats,
             batch=batch,
         )
+
         loss = F.cross_entropy(prediction, x_start)
 
         return loss
@@ -216,7 +224,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         return sampling_func(x, t, t_index, cond, edge_index, patch_feats, batch)
 
     @torch.no_grad()
-    def p_sample_ddim(self, x, t, t_index, cond, edge_index, patch_feats, batch):
+    def p_sample_ddpm(self, x, t, t_index, cond, edge_index, patch_feats, batch):
         prev_timestep = t - self.inference_ratio
 
         if self.classifier_free_prob > 0.0:
@@ -242,17 +250,17 @@ class GNN_Diffusion(sd.GNN_Diffusion):
 
         # estimate x_0
 
-        x_start_estimated_prob = F.softmax(model_output)
-
         logits = torch.where(
             t[:, None].tile(model_output.shape[1]) == 0,
             model_output,
-            self.q_posterior_logits(x, x_start_estimated_prob, t, prev_timestep),
+            self.q_posterior_logits(x, model_output, t, prev_timestep),
         )
 
-        prev_sample = torch.argmax(logits, -1)
-
-        return prev_sample
+        mask = (t != 0).reshape(x.shape[0], *([1] * (len(x.shape)))).to(logits.device)
+        noise = torch.rand(logits.shape).to(logits.device)
+        gumbel_noise = -torch.log(-torch.log(noise))
+        sample = torch.argmax(logits + mask * gumbel_noise, -1)
+        return sample
 
     # Algorithm 2 but save all images:
     @torch.no_grad()
