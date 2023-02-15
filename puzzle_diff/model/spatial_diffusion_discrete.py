@@ -35,7 +35,7 @@ import wandb
 from . import backbones
 from . import spatial_diffusion as sd
 
-# import Dark_TFConv, Eff_GAT, Eff_GAT_Discrete
+# import ark_TFConv, Eff_GAT, Eff_GAT_Discrete
 
 matplotlib.use("agg")
 
@@ -54,7 +54,13 @@ class GNN_Diffusion(sd.GNN_Diffusion):
     def __init__(self, puzzle_sizes, *args, **kwargs):
         K = puzzle_sizes[0][0] * puzzle_sizes[0][1]
         kwargs["sampling"] = "DDPM"
-        super().__init__(input_channels=K, output_channels=K, *args, **kwargs)
+        super().__init__(
+            input_channels=K,
+            output_channels=K,
+            scheduler=sd.ModelScheduler.COSINE_DISCRETE,
+            *args,
+            **kwargs,
+        )
         self.puzzle_sizes = puzzle_sizes[0]
         self.K = K
         Qs = []
@@ -362,3 +368,15 @@ class GNN_Diffusion(sd.GNN_Diffusion):
 
             self.log_dict(self.metrics)
         # return accuracy_dict
+
+
+def cosine_beta_schedule(timesteps, s=0.008):
+    """
+    cosine schedule as proposed in https://arxiv.org/abs/2102.09672
+    """
+    steps = timesteps + 1
+    x = torch.linspace(0, timesteps, steps)
+    alphas_cumprod = torch.cos(((x / timesteps) + s) / (1 + s) * torch.pi * 0.5) ** 2
+    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
+    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
+    return torch.clip(betas, 0.0001, 0.9999)

@@ -62,6 +62,16 @@ class ModelMeanType(enum.Enum):
     EPSILON = enum.auto()  # the model predicts epsilon
 
 
+class ModelScheduler(enum.Enum):
+    """
+    Which type of output the model predicts.
+    """
+
+    LINEAR = enum.auto()  # the model predicts x_{t-1}
+    COSINE = enum.auto()  # the model predicts x_0
+    COSINE_DISCRETE = enum.auto()  # the model predicts epsilon
+
+
 def interpolate_color1d(color1, color2, fraction):
     # color1 = [float(x) / 255 for x in color1]
     # color2 = [float(x) / 255 for x in color2]
@@ -102,6 +112,17 @@ def rotate_images(patches, rot_vector):
     r = krot(angles, mode="nearest")
     rot2 = r(patches)
     return rot2
+
+
+def cosine_discrete_beta_schedule(timesteps, s=0.08):
+    """
+    cosine schedule as proposed in https://arxiv.org/abs/2102.09672
+    """
+    steps = timesteps + 1
+    t = torch.linspace(0, timesteps, steps)
+    alphas_cumprod = lambda t: torch.cos(((t / timesteps) + s) / (1 + s) + np.pi / 2)
+    betas = 1 - alphas_cumprod(t + 1) / alphas_cumprod(t)
+    return torch.clip(betas, 0.0001, 0.9999)
 
 
 def cosine_beta_schedule(timesteps, s=0.08):
@@ -197,6 +218,7 @@ class GNN_Diffusion(pl.LightningModule):
         model_mean_type: ModelMeanType = ModelMeanType.EPSILON,
         input_channels=2,
         output_channels=2,
+        scheduler: ModelScheduler = ModelScheduler.LINEAR,
         *args,
         **kwargs,
     ) -> None:
@@ -226,7 +248,12 @@ class GNN_Diffusion(pl.LightningModule):
             self.eta = 0
 
         # define beta schedule
-        betas = linear_beta_schedule(timesteps=steps)
+        betas = {
+            ModelScheduler.LINEAR: linear_beta_schedule,
+            ModelScheduler.COSINE: cosine_beta_schedule,
+            ModelScheduler.COSINE_DISCRETE: cosine_discrete_beta_schedule,
+        }[scheduler](timesteps=steps)
+
         # self.timesteps = torch.arange(0, 700).flip(0)
         self.register_buffer("betas", betas)
         # self.betas = cosine_beta_schedule(timesteps=steps)
