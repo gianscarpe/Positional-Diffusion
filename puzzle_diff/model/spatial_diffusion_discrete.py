@@ -35,7 +35,6 @@ import wandb
 from . import backbones
 from . import spatial_diffusion as sd
 
-# import Dark_TFConv, Eff_GAT, Eff_GAT_Discrete
 
 matplotlib.use("agg")
 
@@ -54,7 +53,13 @@ class GNN_Diffusion(sd.GNN_Diffusion):
     def __init__(self, puzzle_sizes, *args, **kwargs):
         K = puzzle_sizes[0][0] * puzzle_sizes[0][1]
         kwargs["sampling"] = "DDPM"
-        super().__init__(input_channels=K, output_channels=K, *args, **kwargs)
+        super().__init__(
+            input_channels=K,
+            output_channels=K,
+            scheduler=sd.ModelScheduler.COSINE_DISCRETE,
+            *args,
+            **kwargs,
+        )
         self.puzzle_sizes = puzzle_sizes[0]
         self.K = K
         Qs = []
