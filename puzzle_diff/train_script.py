@@ -80,6 +80,7 @@ def main(
             rotation=rotation,
             model_mean_type=sd.ModelMeanType.START_X,
             puzzle_sizes=puzzle_sizes,
+            scheduler=sd.ModelScheduler.LINEAR,
         )
     else:
         model = sd.GNN_Diffusion(

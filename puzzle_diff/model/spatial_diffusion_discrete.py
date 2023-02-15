@@ -53,11 +53,9 @@ def matrix_cumprod(matrixes, dim):
 class GNN_Diffusion(sd.GNN_Diffusion):
     def __init__(self, puzzle_sizes, *args, **kwargs):
         K = puzzle_sizes[0][0] * puzzle_sizes[0][1]
-        kwargs["sampling"] = "DDPM"
         super().__init__(
             input_channels=K,
             output_channels=K,
-            scheduler=sd.ModelScheduler.COSINE_DISCRETE,
             *args,
             **kwargs,
         )
@@ -156,21 +154,22 @@ class GNN_Diffusion(sd.GNN_Diffusion):
 
         return result.squeeze()
 
-    def q_sample_reverse(self, x, x_start_estimated, t, previous_t):
+    def q_posterior_logits(self, x_t, x_start_logits, t, previous_t, eps=1e-8):
+
         Q_t = self.overline_Q[t]
         Q_previous_t = self.overline_Q[previous_t]
 
-        num = (
-            torch.bmm(F.one_hot(x, self.K).float().unsqueeze(1), Q_t)
-            * torch.bmm(
-                F.one_hot(x_start_estimated, self.K).float().unsqueeze(1),
-                Q_previous_t.transpose(2, 1),
-            )
-        ).squeeze()
+        fact1 = torch.bmm(F.one_hot(x_t, self.K).float().unsqueeze(1), Q_t)
+        fact2 = torch.bmm(
+            x_start_logits.unsqueeze(1),
+            Q_previous_t.transpose(2, 1),
+        )
 
-        q_x = torch.bmm(Q_t, F.one_hot(x, num_classes=self.K).unsqueeze(-1).float())
-        den = F.one_hot(x_start_estimated, self.K).float().unsqueeze(1) @ q_x
-        return num / den.squeeze().unsqueeze(1)
+        out = torch.log(fact1 + eps) + torch.log(fact2 + eps)
+
+        return torch.where(
+            t[:, None].tile(x_start_logits.shape[1]) == 0, x_start_logits, out.squeeze()
+        )
 
     def p_losses(
         self,
@@ -185,7 +184,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         x_start_one_hot = torch.nn.functional.one_hot(x_start)
 
         x_noisy_prob = self.q_sample(x_start=x_start_one_hot, t=t)
-        x_noisy = torch.distributions.categorical.Categorical(x_noisy_prob).sample()
+        x_noisy = torch.argmax(x_noisy_prob, -1)
 
         if self.rotation:
             cond = rotate_images(cond, x_noisy[:, -2:])
@@ -218,7 +217,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         return sampling_func(x, t, t_index, cond, edge_index, patch_feats, batch)
 
     @torch.no_grad()
-    def p_sample_ddpm(self, x, t, t_index, cond, edge_index, patch_feats, batch):
+    def p_sample_ddim(self, x, t, t_index, cond, edge_index, patch_feats, batch):
         prev_timestep = t - self.inference_ratio
 
         if self.classifier_free_prob > 0.0:
@@ -246,13 +245,13 @@ class GNN_Diffusion(sd.GNN_Diffusion):
 
         x_start_estimated_prob = F.softmax(model_output)
 
-        x_start_estimated = x_start_estimated_prob.argmax(1)
+        logits = torch.where(
+            t[:, None].tile(model_output.shape[1]) == 0,
+            model_output,
+            self.q_posterior_logits(x, x_start_estimated_prob, t, prev_timestep),
+        )
 
-        logits = self.q_sample_reverse(x, x_start_estimated, t, prev_timestep)
-
-        p_tilde = logits * x_start_estimated_prob
-
-        prev_sample = torch.distributions.Categorical(p_tilde).sample()
+        prev_sample = torch.argmax(logits, -1)
 
         return prev_sample
 
@@ -303,7 +302,8 @@ class GNN_Diffusion(sd.GNN_Diffusion):
                 idx = torch.where(batch.batch == i)[0]
                 patches_rgb = batch.patches[idx]
                 gt_pos = batch.x[idx]
-                gt_index = batch.indexes[idx]
+                gt_index = batch.indexes[idx] % self.K
+
                 pred_index = pred_last_index[idx]
                 n_patches = batch.patches_dim[i].tolist()
                 i_name = batch.ind_name[i]
