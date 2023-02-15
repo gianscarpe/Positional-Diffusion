@@ -234,7 +234,7 @@ class GNN_Diffusion(pl.LightningModule):
         ### DIFFUSION STUFF
 
         if sampling == "DDPM":
-            self.inference_ratio = 1
+            self.inference_ratio = inference_ratio
             self.p_sample = partial(
                 self.p_sample,
                 sampling_func=self.p_sample_ddpm,

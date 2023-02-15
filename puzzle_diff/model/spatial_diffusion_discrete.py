@@ -164,12 +164,12 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         return torch.argmax(q_logits - torch.log(-torch.log(noise)), -1)
 
     def q_posterior_logits(self, x_t, x_start_logits, t, previous_t, eps=1e-8):
-
+        Q_ksteps_transpose = (
+            self.overline_Q[t] @ torch.linalg.inv(self.overline_Q[previous_t])
+        ).transpose(1, 2)
         Q_previous_t = self.overline_Q[previous_t]
-        Q_onestep_transpose = self.Q_onestep_transpose[previous_t]
-
         fact1 = torch.bmm(
-            F.one_hot(x_t, self.K).float().unsqueeze(1), Q_onestep_transpose
+            F.one_hot(x_t, self.K).float().unsqueeze(1), Q_ksteps_transpose
         )
         fact2 = torch.bmm(F.softmax(x_start_logits).unsqueeze(1), Q_previous_t)
 
