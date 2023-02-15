@@ -118,6 +118,7 @@ def cosine_discrete_beta_schedule(timesteps, s=0.08):
     """
     cosine schedule as proposed in https://arxiv.org/abs/2102.09672
     """
+
     steps = timesteps + 1
     t = torch.linspace(0, timesteps, steps)
     alphas_cumprod = lambda t: torch.cos(((t / timesteps) + s) / (1 + s) + np.pi / 2)
