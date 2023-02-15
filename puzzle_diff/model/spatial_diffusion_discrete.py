@@ -153,11 +153,14 @@ class GNN_Diffusion(sd.GNN_Diffusion):
     # forward diffusion
     def q_sample(self, x_start, t, eps=1e-9):
 
-        noise = torch.rand(size=x_start.shape + (self.K,))
+        noise = torch.rand(size=x_start.shape).to(x_start.device)
 
         Q_t = self.overline_Q[t]
 
-        q_logits = torch.log(torch.bmm(x_start.float().unsqueeze(1), Q_t) + eps)
+        q_logits = torch.log(
+            torch.bmm(x_start.float().unsqueeze(1), Q_t) + eps
+        ).squeeze()
+
         return torch.argmax(q_logits - torch.log(-torch.log(noise)), -1)
 
     def q_posterior_logits(self, x_t, x_start_logits, t, previous_t, eps=1e-8):
@@ -210,6 +213,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             patch_feats=classifier_free_patch_feats,
             batch=batch,
         )
+
         loss = F.cross_entropy(prediction, x_start)
 
         return loss
@@ -253,8 +257,8 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             self.q_posterior_logits(x, model_output, t, prev_timestep),
         )
 
-        mask = (t != 0).reshape(x.shape[0], *([1] * (len(x.shape))))
-        noise = torch.rand(logits.shape, device=logits.device)
+        mask = (t != 0).reshape(x.shape[0], *([1] * (len(x.shape)))).to(logits.device)
+        noise = torch.rand(logits.shape).to(logits.device)
         gumbel_noise = -torch.log(-torch.log(noise))
         sample = torch.argmax(logits + mask * gumbel_noise, -1)
         return sample
