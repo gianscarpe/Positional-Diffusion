@@ -35,7 +35,6 @@ import wandb
 from . import backbones
 from . import spatial_diffusion as sd
 
-
 matplotlib.use("agg")
 
 
@@ -103,7 +102,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
                 batch.indexes.shape, batch.patches, batch.edge_index, batch=batch.batch
             )
             index = indexes[-1]
-            breakpoint()
+
             save_path = Path(f"results/{self.logger.experiment.name}/train")
             for i in range(
                 min(batch.batch.max().item(), 4)
@@ -138,8 +137,8 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         if overline_Q is None:
             overline_Q = self.overline_Q
         noise = torch.rand(size=x_start.shape).to(x_start.device)
-        noise = torch.clip(noise, torch.finfo(noise.dtype).tiny, 1.)
-        Q_t = self.overline_Q[t]
+        noise = torch.clip(noise, torch.finfo(noise.dtype).tiny, 1.0)
+        Q_t = overline_Q[t]
         q_logits = torch.log(
             torch.bmm(x_start.float().unsqueeze(1), Q_t) + eps
         ).squeeze()
@@ -244,7 +243,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
 
         mask = (t != 0).reshape(x.shape[0], *([1] * (len(x.shape)))).to(logits.device)
         noise = torch.rand(logits.shape).to(logits.device)
-        noise = torch.clip(noise, torch.finfo(noise.dtype).tiny, 1.)
+        noise = torch.clip(noise, torch.finfo(noise.dtype).tiny, 1.0)
 
         gumbel_noise = -torch.log(-torch.log(noise))
         sample = torch.argmax(logits + mask * gumbel_noise, -1)
@@ -310,14 +309,6 @@ class GNN_Diffusion(sd.GNN_Diffusion):
                 pred_pos = real_grid[pred_index]
 
                 correct = (pred_index == gt_index).all()
-                if self.rotation:
-                    pred_rot = indexes[idx, 2:]
-                    gt_rot = batch.x[idx, 2:]
-                    rot_correct = (
-                        torch.cosine_similarity(pred_rot, gt_rot)
-                        > math.cos(math.pi / 4)
-                    ).all()
-                    correct = correct and rot_correct
 
                 if (
                     self.local_rank == 0

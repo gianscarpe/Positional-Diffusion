@@ -178,10 +178,11 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             batch=batch,
         )
 
-        x_loss = F.cross_entropy(x_prediction, x_start)
-        rot_loss = F.cross_entropy(rot_prediction, rot_start)
+        x_loss = F.cross_entropy(x_prediction, x_start, label_smoothing=1e-2)
+        rot_loss = F.cross_entropy(rot_prediction, rot_start, label_smoothing=1e-2)
 
-        return {"x_loss": x_loss, "rot_loss": rot_loss}
+        l = math.log(self.K) / math.log(self.rot_K)
+        return {"x_loss": x_loss, "rot_loss": l * rot_loss}
 
     @torch.no_grad()
     def p_sample(
@@ -302,7 +303,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 pred_pos = real_grid[pred_index]
 
                 correct = (pred_index == gt_index).all()
-                rot_correct = pred_rots == batch.rot_index[idx]
+                rot_correct = (pred_rots == batch.rot_index[idx]).all()
                 correct = correct and rot_correct
 
                 if (
@@ -325,6 +326,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
 
                 self.metrics[f"{tuple(n_patches)}_nImages"].update(1)
                 self.metrics["overall_nImages"].update(1)
+
                 if correct:
                     # if (assignement[:, 0] == assignement[:, 1]).all():
                     self.metrics[f"{tuple(n_patches)}_acc"].update(1)
