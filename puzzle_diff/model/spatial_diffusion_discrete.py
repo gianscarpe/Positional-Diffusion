@@ -153,7 +153,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
     def q_sample(self, x_start, t, eps=1e-9):
 
         noise = torch.rand(size=x_start.shape).to(x_start.device)
-
+        noise = torch.clip(noise, torch.finfo(noise.dtype).tiny, 1.)
         Q_t = self.overline_Q[t]
 
         q_logits = torch.log(
@@ -213,7 +213,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             batch=batch,
         )
 
-        loss = F.cross_entropy(prediction, x_start)
+        loss = F.cross_entropy(prediction, x_start, label_smoothing=1e-2)
 
         return loss
 
@@ -258,6 +258,8 @@ class GNN_Diffusion(sd.GNN_Diffusion):
 
         mask = (t != 0).reshape(x.shape[0], *([1] * (len(x.shape)))).to(logits.device)
         noise = torch.rand(logits.shape).to(logits.device)
+        noise = torch.clip(noise, torch.finfo(noise.dtype).tiny, 1.)
+
         gumbel_noise = -torch.log(-torch.log(noise))
         sample = torch.argmax(logits + mask * gumbel_noise, -1)
         return sample
@@ -295,7 +297,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
                 batch=batch,
             )
 
-        imgs.append(index)
+            imgs.append(index)
         return imgs
 
     def validation_step(self, batch, batch_idx):
