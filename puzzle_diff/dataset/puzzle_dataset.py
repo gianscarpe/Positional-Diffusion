@@ -193,6 +193,7 @@ class Puzzle_Dataset_ROT(Puzzle_Dataset):
         patch_per_dim=[(7, 6)],
         patch_size=32,
         augment=False,
+        concat_rot=True,
     ) -> None:
         super().__init__(
             dataset=dataset,
@@ -201,6 +202,7 @@ class Puzzle_Dataset_ROT(Puzzle_Dataset):
             patch_size=patch_size,
             augment=augment,
         )
+        self.concat_rot = concat_rot
 
     def get(self, idx):
         if self.dataset is not None:
@@ -236,6 +238,9 @@ class Puzzle_Dataset_ROT(Puzzle_Dataset):
         #                   1 -> 90 degrees
         #                   2 -> 180 degrees
         #                   3 -> 270 degrees
+        indexes = torch.arange(patch_per_dim[0] * patch_per_dim[1]).reshape(
+            xy.shape[:-1]
+        )
 
         rots = torch.tensor(
             [
@@ -257,10 +262,14 @@ class Puzzle_Dataset_ROT(Puzzle_Dataset):
         ]
 
         patches = torch.stack(rotated_patch_tensor)
-        xy = torch.cat([xy, rots_tensor], 1)
+        if self.concat_rot:
+            xy = torch.cat([xy, rots_tensor], 1)
 
         data = pyg_data.Data(
             x=xy,
+            indexes=indexes,
+            rot=rots_tensor,
+            rot_index=random_rot,
             patches=patches,
             edge_index=edge_index,
             ind_name=torch.tensor([idx]).long(),

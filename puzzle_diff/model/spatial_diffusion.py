@@ -352,9 +352,10 @@ class GNN_Diffusion(pl.LightningModule):
         edge_index: Tensor,
         patch_feats: Tensor,
         batch,
+        rot: Tensor,
     ) -> Any:
         return self.model.forward_with_feats(
-            xy_pos, time, patch_rgb, edge_index, patch_feats, batch
+            xy_pos, rot, time, patch_rgb, edge_index, patch_feats, batch
         )
         # mean = patch_rgb.new_tensor([0.4850, 0.4560, 0.4060])[None, :, None, None]
         # std = patch_rgb.new_tensor([0.2290, 0.2240, 0.2250])[None, :, None, None]
