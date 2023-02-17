@@ -238,6 +238,7 @@ class Puzzle_Dataset_ROT(Puzzle_Dataset):
         #                   1 -> 90 degrees
         #                   2 -> 180 degrees
         #                   3 -> 270 degrees
+
         indexes = torch.arange(patch_per_dim[0] * patch_per_dim[1]).reshape(
             xy.shape[:-1]
         )

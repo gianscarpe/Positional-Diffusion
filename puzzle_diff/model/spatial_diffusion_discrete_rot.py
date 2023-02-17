@@ -83,8 +83,8 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         losses = self.p_losses(
             batch.indexes % self.K,
             new_t,
-            rot_start=batch.rot_index % self.rot_K,
-            loss_type="huber",
+            rot_start=batch.rot_index % self.K,
+            loss_type="cross_entropy",
             cond=batch.patches,
             edge_index=batch.edge_index,
             batch=batch.batch,
@@ -133,8 +133,24 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                     pred_rotations=rots[rot],
                 )
         self.log_dict(losses)
+        loss_tot = sum(l for l in losses.values())
+        self.log("loss", loss_tot)
 
-        return sum(l for l in losses.values())
+        return loss_tot
+
+    def forward_with_feats(
+        self,
+        xy_pos: Tensor,
+        time: Tensor,
+        patch_rgb: Tensor,
+        edge_index: Tensor,
+        patch_feats: Tensor,
+        rot: Tensor,
+        batch,
+    ) -> Any:
+        return self.model.forward_with_feats(
+            xy_pos, rot, time, patch_rgb, edge_index, patch_feats, batch
+        )
 
     def p_losses(
         self,
@@ -157,7 +173,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         rot_noisy = self.q_sample(
             x_start=rot_start_one_hot, t=t, overline_Q=self.overline_Q_rot
         )
-        cond = rotate_images(cond, rot_noisy)
+        # cond = rotate_images(cond, rot_noisy)
 
         patch_feats = self.visual_features(cond)
         batch_size = batch.max() + 1
@@ -178,11 +194,13 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             batch=batch,
         )
 
-        x_loss = F.cross_entropy(x_prediction, x_start, label_smoothing=1e-2)
-        rot_loss = F.cross_entropy(rot_prediction, rot_start, label_smoothing=1e-2)
+        if loss_type == "cross_entropy":
+            x_loss = F.cross_entropy(x_prediction, x_start)
+            rot_loss = F.cross_entropy(rot_prediction, rot_start)
+        elif loss_type == "vb":
+            x_loss = self.vb_terms_bpd(x_)
 
-        l = math.log(self.K) / math.log(self.rot_K)
-        return {"x_loss": x_loss, "rot_loss": l * rot_loss}
+        return {"x_loss": x_loss, "rot_loss": rot_loss}
 
     @torch.no_grad()
     def p_sample(
@@ -287,10 +305,11 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             for i in range(batch.batch.max() + 1):
                 idx = torch.where(batch.batch == i)[0]
                 patches_rgb = batch.patches[idx]
-                gt_pos = batch.x[idx]
+
+                gt_pos = batch.x[idx][:, :2]
                 gt_index = batch.indexes[idx] % self.K
                 gt_rots = batch.rot[idx]
-
+                gt_rots_index = batch.rot_index[idx] % self.K
                 pred_index = pred_last_index[0][idx]
                 pred_rots = pred_last_index[1][idx]
                 n_patches = batch.patches_dim[i].tolist()
@@ -303,7 +322,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 pred_pos = real_grid[pred_index]
 
                 correct = (pred_index == gt_index).all()
-                rot_correct = (pred_rots == batch.rot_index[idx]).all()
+                rot_correct = (pred_rots == gt_rots_index).all()
                 correct = correct and rot_correct
 
                 if (
@@ -357,4 +376,4 @@ def rotate_images(patches, rot_index):
     angles = (90 * rot_index).float()
     r = krot(angles, mode="nearest")
     rot2 = r(patches)
-    return rot2
+    return rot

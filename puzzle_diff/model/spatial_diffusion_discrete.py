@@ -92,7 +92,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         loss = self.p_losses(
             batch.indexes % self.K,
             new_t,
-            loss_type="huber",
+            loss_type="cross_entropy",
             cond=batch.patches,
             edge_index=batch.edge_index,
             batch=batch.batch,
@@ -157,6 +157,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             overline_Q[t] @ torch.linalg.inv(overline_Q[previous_t])
         ).transpose(1, 2)
         Q_previous_t = overline_Q[previous_t]
+
         fact1 = torch.bmm(F.one_hot(x_t, K).float().unsqueeze(1), Q_ksteps_transpose)
         fact2 = torch.bmm(F.softmax(x_start_logits).unsqueeze(1), Q_previous_t)
 
@@ -197,8 +198,18 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             patch_feats=classifier_free_patch_feats,
             batch=batch,
         )
+        if loss_type == "cross_entropy":
+            loss = F.cross_entropy(prediction, x_start, label_smoothing=1e-2)
+        else:
+            model_logits = torch.where(
+                t[:, None].tile(prediction.shape[1]) == 0,
+                prediction,
+                self.q_posterior_logits(
+                    x_noisy, prediction, t, t - self.inference_ratio
+                ),
+            )
 
-        loss = F.cross_entropy(prediction, x_start, label_smoothing=1e-2)
+            loss = self.vb_terms_bpd(prediction, model_logits, x_start, x_noisy, t)
 
         return loss
 
@@ -340,3 +351,52 @@ class GNN_Diffusion(sd.GNN_Diffusion):
 
             self.log_dict(self.metrics)
         # return accuracy_dict
+
+    def vb_terms_bpd(self, pred_x_start_logits, model_logits, *, x_start, x_t, t):
+        """Calculate specified terms of the variational bound.
+        Args:
+          model_fn: the denoising network
+          x_start: original clean data
+          x_t: noisy data
+          t: timestep of the noisy data (and the corresponding term of the bound
+            to return)
+        Returns:
+          a pair `(kl, pred_start_logits)`, where `kl` are the requested bound terms
+          (specified by `t`), and `pred_x_start_logits` is logits of
+          the denoised image.
+        """
+        true_logits = self.q_posterior_logits(x_start, x_t, t, x_start_logits=False)
+
+        kl = categorical_kl_logits(logits1=true_logits, logits2=model_logits)
+        assert kl.shape == x_start.shape
+        kl = meanflat(kl) / torch.log(torch.tensor([2.0]))
+
+        decoder_nll = -F.nll_loss(x_start, model_logits)
+        assert decoder_nll.shape == x_start.shape
+        decoder_nll = meanflat(decoder_nll) / torch.log(torch.tensor([2.0]))
+
+        # At the first timestep return the decoder NLL,
+        # otherwise return KL(q(x_{t-1}|x_t,x_start) || p(x_{t-1}|x_t))
+        assert kl.shape == decoder_nll.shape == t.shape == (x_start.shape[0],)
+        return torch.where(t == 0, decoder_nll, kl), pred_x_start_logits
+
+
+def categorical_kl_logits(logits1, logits2, eps=1.0e-6):
+    """KL divergence between categorical distributions.
+    Distributions parameterized by logits.
+    Args:
+      logits1: logits of the first distribution. Last dim is class dim.
+      logits2: logits of the second distribution. Last dim is class dim.
+      eps: float small number to avoid numerical issues.
+    Returns:
+      KL(C(logits1) || C(logits2)): shape: logits1.shape[:-1]
+    """
+    out = F.softmax(logits1 + eps, dim=-1) * (
+        F.log_softmax(logits1 + eps, dim=-1) - F.log_softmax(logits2 + eps, dim=-1)
+    )
+    return torch.sum(out, dim=-1)
+
+
+def meanflat(x: torch.Tensor):
+    """Take the mean over all axes except the first batch dimension."""
+    return torch.mean(x, dim=tuple(range(1, len(x.shape))))

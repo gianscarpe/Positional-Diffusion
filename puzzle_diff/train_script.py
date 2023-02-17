@@ -52,7 +52,9 @@ def main(
 
     if rotation:
         train_dt, test_dt, puzzle_sizes = du.get_dataset_ROT(
-            dataset=dataset, puzzle_sizes=puzzle_sizes, augment=data_augmentation
+            dataset=dataset,
+            puzzle_sizes=puzzle_sizes,
+            augment=data_augmentation,
         )
     else:
         train_dt, test_dt, puzzle_sizes = du.get_dataset(
