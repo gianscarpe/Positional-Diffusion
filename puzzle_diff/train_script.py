@@ -15,6 +15,7 @@ import pytorch_lightning as pl
 from dataset import dataset_utils as du
 from model import spatial_diffusion as sd
 from model import spatial_diffusion_discrete as sdd
+from model import spatial_diffusion_discrete_rot as sdd_rot
 from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 from pytorch_lightning.loggers import WandbLogger
 
@@ -66,7 +67,7 @@ def main(
     )
 
     if discrete:
-        model = sdd.GNN_Diffusion(
+        model = (sdd_rot.GNN_Diffusion if rotation else sdd.GNN_Diffusion)(
             steps=steps,
             sampling=sampling,
             inference_ratio=inference_ratio,
