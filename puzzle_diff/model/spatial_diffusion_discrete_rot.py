@@ -290,7 +290,8 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 gt_index = batch.indexes[idx] % self.K
                 gt_rots = batch.rot[idx]
 
-                pred_index, pred_rots = pred_last_index[idx]
+                pred_index = pred_last_index[0][idx]
+                pred_rots = pred_last_index[1][idx]
                 n_patches = batch.patches_dim[i].tolist()
                 i_name = batch.ind_name[i]
 
@@ -301,7 +302,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 pred_pos = real_grid[pred_index]
 
                 correct = (pred_index == gt_index).all()
-                rot_correct = pred_rots == gt_rots
+                rot_correct = pred_rots == batch.rot_index[idx]
                 correct = correct and rot_correct
 
                 if (
