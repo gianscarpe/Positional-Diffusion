@@ -84,7 +84,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             batch.indexes % self.K,
             new_t,
             rot_start=batch.rot_index % self.K,
-            loss_type="cross_entropy",
+            loss_type=self.loss_type,
             cond=batch.patches,
             edge_index=batch.edge_index,
             batch=batch.batch,
@@ -198,7 +198,37 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             x_loss = F.cross_entropy(x_prediction, x_start)
             rot_loss = F.cross_entropy(rot_prediction, rot_start)
         elif loss_type == "vb":
-            x_loss = self.vb_terms_bpd(x_)
+            model_logits_x = torch.where(
+                t[:, None].tile(x_prediction.shape[1]) == 0,
+                x_prediction,
+                self.q_posterior_logits(x_noisy, x_prediction, t, t - 1),
+            )
+            model_logits_rot = torch.where(
+                t[:, None].tile(rot_prediction.shape[1]) == 0,
+                rot_prediction,
+                self.q_posterior_logits(
+                    rot_noisy,
+                    rot_prediction,
+                    t,
+                    t - 1,
+                    K=self.rot_K,
+                    overline_Q=self.overline_Q_rot,
+                ),
+            )
+            x_loss = self.vb_terms_bpd(
+                x_prediction, model_logits_x, x_start, x_noisy, t
+            )
+            rot_loss = self.vb_terms_bpd(
+                rot_prediction,
+                model_logits_rot,
+                rot_start,
+                rot_noisy,
+                t,
+                K=self.rot_K,
+                overline_Q=self.overline_Q_rot,
+            )
+        else:
+            raise Exception("Loss not implemented %s", loss_type)
 
         return {"x_loss": x_loss, "rot_loss": rot_loss}
 

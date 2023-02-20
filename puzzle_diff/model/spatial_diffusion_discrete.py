@@ -355,7 +355,16 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             self.log_dict(self.metrics)
         # return accuracy_dict
 
-    def vb_terms_bpd(self, pred_x_start_logits, model_logits, x_start, x_t, t):
+    def vb_terms_bpd(
+        self,
+        pred_x_start_logits,
+        model_logits,
+        x_start,
+        x_t,
+        t,
+        K=None,
+        overline_Q=None,
+    ):
         """Calculate specified terms of the variational bound.
         Args:
           model_fn: the denoising network
@@ -368,7 +377,14 @@ class GNN_Diffusion(sd.GNN_Diffusion):
           (specified by `t`), and `pred_x_start_logits` is logits of
           the denoised image.
         """
-        true_logits = self.q_posterior_logits(x_t, F.one_hot(x_start).float(), t, t - 1)
+        if overline_Q is None:
+            overline_Q = self.overline_Q
+        if K is None:
+            K = self.K
+
+        true_logits = self.q_posterior_logits(
+            x_t, F.one_hot(x_start).float(), t, t - 1, K=K, overline_Q=overline_Q
+        )
 
         kl = categorical_kl_logits(logits1=true_logits, logits2=model_logits)
         assert kl.shape == x_start.shape
