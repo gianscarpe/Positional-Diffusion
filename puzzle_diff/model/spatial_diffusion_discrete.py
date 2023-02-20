@@ -49,15 +49,16 @@ def matrix_cumprod(matrixes, dim):
 
 
 class GNN_Diffusion(sd.GNN_Diffusion):
-    def __init__(self, puzzle_sizes, *args, **kwargs):
+    def __init__(self, puzzle_sizes, loss_type="cross_entropy", *args, **kwargs):
         K = puzzle_sizes[0][0] * puzzle_sizes[0][1]
         super().__init__(
-            input_channels=K,
-            output_channels=K,
+            # input_channels=K,
+            # output_channels=K,
             *args,
             **kwargs,
         )
         self.puzzle_sizes = puzzle_sizes[0]
+        self.loss_type = loss_type
         self.K = K
         Qs = []
 
@@ -92,7 +93,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         loss = self.p_losses(
             batch.indexes % self.K,
             new_t,
-            loss_type="cross_entropy",
+            loss_type=self.loss_type,
             cond=batch.patches,
             edge_index=batch.edge_index,
             batch=batch.batch,
@@ -200,7 +201,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         )
         if loss_type == "cross_entropy":
             loss = F.cross_entropy(prediction, x_start, label_smoothing=1e-2)
-        else:
+        elif loss_type == "vb":
             model_logits = torch.where(
                 t[:, None].tile(prediction.shape[1]) == 0,
                 prediction,
@@ -365,7 +366,8 @@ class GNN_Diffusion(sd.GNN_Diffusion):
           (specified by `t`), and `pred_x_start_logits` is logits of
           the denoised image.
         """
-        true_logits = self.q_posterior_logits(x_start, x_t, t, x_start_logits=False)
+        breakpoint()
+        true_logits = self.q_posterior_logits(x_t, x_start, t, t - 1)
 
         kl = categorical_kl_logits(logits1=true_logits, logits2=model_logits)
         assert kl.shape == x_start.shape
