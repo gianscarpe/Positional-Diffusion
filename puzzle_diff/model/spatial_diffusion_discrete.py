@@ -75,6 +75,8 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         self.register_buffer(
             "overline_Q", torch.stack(matrix_cumprod(torch.stack(Qs), 0))
         )
+        self.discrete = True
+        self.save_hyperparameters()
 
     def init_backbone(self):
         self.model = backbones.Eff_GAT_Discrete(
