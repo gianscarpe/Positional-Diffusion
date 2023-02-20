@@ -47,6 +47,7 @@ def main(
     rotation,
     predict_xstart,
     discrete,
+    loss_type,
 ):
     ### Define dataset
 
@@ -80,6 +81,7 @@ def main(
             model_mean_type=sd.ModelMeanType.START_X,
             puzzle_sizes=puzzle_sizes,
             scheduler=sd.ModelScheduler.LINEAR,
+            loss_type=loss_type,
         )
     else:
         model = sd.GNN_Diffusion(
@@ -128,7 +130,7 @@ def main(
         strategy="ddp" if gpus > 1 else None,
         check_val_every_n_epoch=5,
         logger=wandb_logger,
-        num_sanity_val_steps=2,
+        num_sanity_val_steps=0,
         callbacks=[checkpoint_callback, ModelSummary(max_depth=2)],
     )
 
@@ -160,6 +162,7 @@ if __name__ == "__main__":
     ap.add_argument("--predict_xstart", type=bool, default=False)
     ap.add_argument("--rotation", type=bool, default=False)
     ap.add_argument("--discrete", type=bool, default=False)
+    ap.add_argument("--loss_type", type=str, default="cross_entropy")
     args = ap.parse_args()
     print(args)
     main(
@@ -180,4 +183,5 @@ if __name__ == "__main__":
         rotation=args.rotation,
         predict_xstart=args.predict_xstart,
         discrete=args.discrete,
+        loss_type=args.loss_type,
     )

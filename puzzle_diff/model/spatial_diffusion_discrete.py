@@ -207,9 +207,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             model_logits = torch.where(
                 t[:, None].tile(prediction.shape[1]) == 0,
                 prediction,
-                self.q_posterior_logits(
-                    x_noisy, prediction, t, t - self.inference_ratio
-                ),
+                self.q_posterior_logits(x_noisy, prediction, t, t - 1),
             )
 
             loss = self.vb_terms_bpd(prediction, model_logits, x_start, x_noisy, t)
