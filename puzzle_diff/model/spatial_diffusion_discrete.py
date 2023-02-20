@@ -49,11 +49,11 @@ def matrix_cumprod(matrixes, dim):
 
 
 class GNN_Diffusion(sd.GNN_Diffusion):
-    def __init__(self, puzzle_sizes, loss_type="cross_entropy", *args, **kwargs):
+    def __init__(self, puzzle_sizes, loss_type="vb", *args, **kwargs):
         K = puzzle_sizes[0][0] * puzzle_sizes[0][1]
         super().__init__(
-            # input_channels=K,
-            # output_channels=K,
+            input_channels=K,
+            output_channels=K,
             *args,
             **kwargs,
         )
@@ -213,6 +213,8 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             )
 
             loss = self.vb_terms_bpd(prediction, model_logits, x_start, x_noisy, t)
+        else:
+            raise Exception("Loss not implemented %s", loss_type)
 
         return loss
 
@@ -355,7 +357,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             self.log_dict(self.metrics)
         # return accuracy_dict
 
-    def vb_terms_bpd(self, pred_x_start_logits, model_logits, *, x_start, x_t, t):
+    def vb_terms_bpd(self, pred_x_start_logits, model_logits, x_start, x_t, t):
         """Calculate specified terms of the variational bound.
         Args:
           model_fn: the denoising network
@@ -368,21 +370,24 @@ class GNN_Diffusion(sd.GNN_Diffusion):
           (specified by `t`), and `pred_x_start_logits` is logits of
           the denoised image.
         """
-        breakpoint()
-        true_logits = self.q_posterior_logits(x_t, x_start, t, t - 1)
+        true_logits = self.q_posterior_logits(x_t, F.one_hot(x_start).float(), t, t - 1)
 
         kl = categorical_kl_logits(logits1=true_logits, logits2=model_logits)
         assert kl.shape == x_start.shape
-        kl = meanflat(kl) / torch.log(torch.tensor([2.0]))
+        kl = kl / torch.log(torch.tensor([2.0])).to(kl.device)
 
-        decoder_nll = -F.nll_loss(x_start, model_logits)
-        assert decoder_nll.shape == x_start.shape
-        decoder_nll = meanflat(decoder_nll) / torch.log(torch.tensor([2.0]))
+        decoder_nll = F.nll_loss(
+            F.log_softmax(model_logits, dim=1), x_start, reduction="none"
+        )
+
+        decoder_nll = decoder_nll / torch.log(torch.tensor([2.0])).to(
+            decoder_nll.device
+        )
 
         # At the first timestep return the decoder NLL,
         # otherwise return KL(q(x_{t-1}|x_t,x_start) || p(x_{t-1}|x_t))
-        assert kl.shape == decoder_nll.shape == t.shape == (x_start.shape[0],)
-        return torch.where(t == 0, decoder_nll, kl), pred_x_start_logits
+
+        return torch.where(t == 0, decoder_nll, kl).mean()
 
 
 def categorical_kl_logits(logits1, logits2, eps=1.0e-6):
