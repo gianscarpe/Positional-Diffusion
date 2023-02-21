@@ -52,11 +52,11 @@ def matrix_cumprod(matrixes, dim):
 
 
 class GNN_Diffusion(sdd.GNN_Diffusion):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, only_rotation=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Qs = []
         self.rot_K = 4
-
+        self.losses_keys = ["rot_loss"] if only_rotation else ["rot_loss", "x_loss"]
         for t in range(self.steps):
             beta_t = self.betas[t]
             Q_t = (1 - beta_t) * torch.eye(self.rot_K) + beta_t * torch.ones(
@@ -230,7 +230,9 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         else:
             raise Exception("Loss not implemented %s", loss_type)
 
-        return {"x_loss": x_loss, "rot_loss": rot_loss}
+        losses = {"x_loss": x_loss, "rot_loss": rot_loss}
+
+        return {k: v for k, v in losses.items() if k in self.losses_keys}
 
     @torch.no_grad()
     def p_sample(

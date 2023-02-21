@@ -48,6 +48,7 @@ def main(
     predict_xstart,
     discrete,
     loss_type,
+    only_rotation,
 ):
     ### Define dataset
 
@@ -69,8 +70,23 @@ def main(
         test_dt, batch_size=batch_size, num_workers=num_workers, shuffle=False
     )
 
-    if discrete:
-        model = (sdd_rot.GNN_Diffusion if rotation else sdd.GNN_Diffusion)(
+    if discrete and rotation:
+        model = sdd_rot.GNN_Diffusion(
+            steps=steps,
+            sampling=sampling,
+            inference_ratio=inference_ratio,
+            classifier_free_w=classifier_free_w,
+            classifier_free_prob=classifier_free_prob,
+            noise_weight=noise_weight,
+            rotation=rotation,
+            model_mean_type=sd.ModelMeanType.START_X,
+            puzzle_sizes=puzzle_sizes,
+            scheduler=sd.ModelScheduler.LINEAR,
+            loss_type=loss_type,
+            only_rotation=only_rotation,
+        )
+    elif discrete:
+        model = sdd.GNN_Diffusion(
             steps=steps,
             sampling=sampling,
             inference_ratio=inference_ratio,
@@ -161,6 +177,7 @@ if __name__ == "__main__":
     ap.add_argument("--noise_weight", type=float, default=0.0)
     ap.add_argument("--predict_xstart", type=bool, default=False)
     ap.add_argument("--rotation", type=bool, default=False)
+    ap.add_argument("--only_rotation", type=bool, default=False)
     ap.add_argument("--discrete", type=bool, default=False)
     ap.add_argument("--loss_type", type=str, default="cross_entropy")
     args = ap.parse_args()
@@ -184,4 +201,5 @@ if __name__ == "__main__":
         predict_xstart=args.predict_xstart,
         discrete=args.discrete,
         loss_type=args.loss_type,
+        only_rotation=args.only_rotation,
     )
