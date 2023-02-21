@@ -149,7 +149,15 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         return torch.argmax(q_logits - torch.log(-torch.log(noise)), -1)
 
     def q_posterior_logits(
-        self, x_t, x_start_logits, t, previous_t, K=None, overline_Q=None, eps=1e-8
+        self,
+        x_t,
+        x_start_logits,
+        t,
+        previous_t,
+        K=None,
+        overline_Q=None,
+        eps=1e-8,
+        use_x_start_logits=True,
     ):
         if overline_Q is None:
             overline_Q = self.overline_Q
@@ -162,12 +170,18 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         Q_previous_t = overline_Q[previous_t]
 
         fact1 = torch.bmm(F.one_hot(x_t, K).float().unsqueeze(1), Q_ksteps_transpose)
-        fact2 = torch.bmm(F.softmax(x_start_logits).unsqueeze(1), Q_previous_t)
+
+        if use_x_start_logits:
+            tzero_logits = x_start_logits
+            fact2 = torch.bmm(F.softmax(x_start_logits).unsqueeze(1), Q_previous_t)
+        else:
+            tzero_logits = torch.log(x_start_logits + 1e-8)
+            fact2 = torch.bmm(x_start_logits.unsqueeze(1), Q_previous_t)
 
         out = torch.log(fact1 + eps) + torch.log(fact2 + eps)
 
         return torch.where(
-            t[:, None].tile(x_start_logits.shape[1]) == 0, x_start_logits, out.squeeze()
+            t[:, None].tile(x_start_logits.shape[1]) == 0, tzero_logits, out.squeeze()
         )
 
     def p_losses(
@@ -204,12 +218,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         if loss_type == "cross_entropy":
             loss = F.cross_entropy(prediction, x_start, label_smoothing=1e-2)
         elif loss_type == "vb":
-            model_logits = torch.where(
-                t[:, None].tile(prediction.shape[1]) == 0,
-                prediction,
-                self.q_posterior_logits(x_noisy, prediction, t, t - 1),
-            )
-
+            model_logits = self.q_posterior_logits(x_noisy, prediction, t, t - 1)
             loss = self.vb_terms_bpd(prediction, model_logits, x_start, x_noisy, t)
         else:
             raise Exception("Loss not implemented %s", loss_type)
@@ -383,7 +392,17 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             K = self.K
 
         true_logits = self.q_posterior_logits(
-            x_t, F.one_hot(x_start).float(), t, t - 1, K=K, overline_Q=overline_Q
+            x_t,
+            F.one_hot(x_start).float(),
+            t,
+            t - 1,
+            K=K,
+            overline_Q=overline_Q,
+            use_x_start_logits=False,
+        )
+
+        true_logits = torch.where(
+            t[:, None] == 0, torch.log(F.one_hot(x_start) + 1e-8), true_logits
         )
 
         kl = categorical_kl_logits(logits1=true_logits, logits2=model_logits)
