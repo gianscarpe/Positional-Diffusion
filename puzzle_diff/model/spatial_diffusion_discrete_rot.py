@@ -236,6 +236,39 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 K=self.rot_K,
                 overline_Q=self.overline_Q_rot,
             )
+        elif loss_type == "hybrid":
+            xstart_ce = F.cross_entropy(x_prediction, x_start, label_smoothing=1e-2)
+            rot_ce = F.cross_entropy(rot_prediction, rot_start)
+            model_logits_x = torch.where(
+                t[:, None].tile(x_prediction.shape[1]) == 0,
+                x_prediction,
+                self.q_posterior_logits(x_noisy, x_prediction, t, t - 1),
+            )
+            model_logits_rot = torch.where(
+                t[:, None].tile(rot_prediction.shape[1]) == 0,
+                rot_prediction,
+                self.q_posterior_logits(
+                    rot_noisy,
+                    rot_prediction,
+                    t,
+                    t - 1,
+                    K=self.rot_K,
+                    overline_Q=self.overline_Q_rot,
+                ),
+            )
+            x_vb = self.vb_terms_bpd(x_prediction, model_logits_x, x_start, x_noisy, t)
+            rot_vb = self.vb_terms_bpd(
+                rot_prediction,
+                model_logits_rot,
+                rot_start,
+                rot_noisy,
+                t,
+                K=self.rot_K,
+                overline_Q=self.overline_Q_rot,
+            )
+
+            x_loss = self.lambda_loss * xstart_ce + x_vb
+            rot_loss = self.lambda_loss * rot_ce + rot_vb
         else:
             raise Exception("Loss not implemented %s", loss_type)
 
