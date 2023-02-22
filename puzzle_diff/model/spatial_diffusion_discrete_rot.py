@@ -56,6 +56,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         super().__init__(*args, **kwargs)
         Qs = []
         self.rot_K = 4
+        self.only_rotation = only_rotation
         self.losses_keys = ["rot_loss"] if only_rotation else ["rot_loss", "x_loss"]
         for t in range(self.steps):
             beta_t = self.betas[t]
@@ -91,7 +92,11 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         )
         if batch_idx == 0 and self.local_rank == 0:
             indexes = self.p_sample_loop(
-                batch.indexes.shape, batch.patches, batch.edge_index, batch=batch.batch
+                batch.indexes.shape,
+                batch.patches,
+                batch.edge_index,
+                batch=batch.batch,
+                x_start=batch.indexes % self.K,
             )
             index, pred_rot = indexes[-1]
             rots = torch.tensor(
@@ -119,7 +124,8 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 real_grid = einops.rearrange(xy, "x y c-> (x y) c")
                 pos = real_grid[index[idx]]
                 rot = pred_rot[index[idx]]
-
+                if self.only_rotation:
+                    pos = gt_pos
                 n_patches = batch.patches_dim[i]
                 i_name = batch.ind_name[i]
                 self.save_image_rotated(
@@ -183,6 +189,9 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             > self.classifier_free_prob
         )
         classifier_free_patch_feats = prob[:, None] * patch_feats
+
+        if self.only_rotation:
+            x_noisy = x_start
 
         x_prediction, rot_prediction = self.forward_with_feats(
             x_noisy,
@@ -287,7 +296,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
 
     # Algorithm 2 but save all images:
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, edge_index, batch):
+    def p_sample_loop(self, shape, cond, edge_index, batch, x_start=None):
         # device = next(model.parameters()).device
         device = self.device
 
@@ -304,6 +313,9 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             list(reversed(range(0, self.steps, self.inference_ratio))),
             desc="sampling loop time step",
         ):
+            if self.only_rotation:
+                index = x_start
+
             index, rot = self.p_sample(
                 index,
                 rot,
@@ -322,7 +334,11 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
             preds = self.p_sample_loop(
-                batch.indexes.shape, batch.patches, batch.edge_index, batch=batch.batch
+                batch.indexes.shape,
+                batch.patches,
+                batch.edge_index,
+                batch=batch.batch,
+                x_start=batch.indexes % self.K,
             )
             pred_last_index = preds[-1]
             rots = torch.tensor(
@@ -355,7 +371,12 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
 
                 correct = (pred_index == gt_index).all()
                 rot_correct = (pred_rots == gt_rots_index).all()
-                correct = correct and rot_correct
+
+                correct = (
+                    correct and rot_correct if not self.only_rotation else rot_correct
+                )
+                if self.only_rotation:
+                    pred_pos = gt_pos
 
                 if (
                     self.local_rank == 0

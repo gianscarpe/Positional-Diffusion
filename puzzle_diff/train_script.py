@@ -146,7 +146,7 @@ def main(
         strategy="ddp" if gpus > 1 else None,
         check_val_every_n_epoch=5,
         logger=wandb_logger,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=2,
         callbacks=[checkpoint_callback, ModelSummary(max_depth=2)],
     )
 

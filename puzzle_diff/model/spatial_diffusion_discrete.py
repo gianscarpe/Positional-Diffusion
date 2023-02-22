@@ -49,7 +49,7 @@ def matrix_cumprod(matrixes, dim):
 
 
 class GNN_Diffusion(sd.GNN_Diffusion):
-    def __init__(self, puzzle_sizes, loss_type="vb", *args, **kwargs):
+    def __init__(self, puzzle_sizes, loss_type="vb", lambda_loss=0.5, *args, **kwargs):
         K = puzzle_sizes[0][0] * puzzle_sizes[0][1]
         super().__init__(
             input_channels=K,
@@ -57,6 +57,7 @@ class GNN_Diffusion(sd.GNN_Diffusion):
             *args,
             **kwargs,
         )
+        self.lambda_loss = lambda_loss
         self.puzzle_sizes = puzzle_sizes[0]
         self.loss_type = loss_type
         self.K = K
@@ -220,6 +221,11 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         elif loss_type == "vb":
             model_logits = self.q_posterior_logits(x_noisy, prediction, t, t - 1)
             loss = self.vb_terms_bpd(prediction, model_logits, x_start, x_noisy, t)
+        elif loss_type == "hybrid":
+            xstart_loss = F.cross_entropy(prediction, x_start, label_smoothing=1e-2)
+            model_logits = self.q_posterior_logits(x_noisy, prediction, t, t - 1)
+            vb_loss = self.vb_terms_bpd(prediction, model_logits, x_start, x_noisy, t)
+            loss = self.lambda_loss * xstart_loss + vb_loss
         else:
             raise Exception("Loss not implemented %s", loss_type)
 
