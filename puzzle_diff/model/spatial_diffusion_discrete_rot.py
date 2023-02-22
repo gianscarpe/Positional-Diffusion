@@ -98,7 +98,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 batch=batch.batch,
                 x_start=batch.indexes % self.K,
             )
-            index, pred_rot = indexes[-1]
+            pred_pos, pred_rot = indexes[-1]
             rots = torch.tensor(
                 [
                     [1, 0],
@@ -114,7 +114,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             ):  # save max 4 images during training loop
                 idx = torch.where(batch.batch == i)[0]
                 patches_rgb = batch.patches[idx]
-                gt_pos = batch.x[idx]
+                gt_pos = batch.x[idx][:, :2]
                 gt_rot = batch.rot[idx]
 
                 n_patches = batch.patches_dim[i].tolist()
@@ -122,8 +122,8 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 x = torch.linspace(-1, 1, n_patches[1], device=self.device)
                 xy = torch.stack(torch.meshgrid(x, y, indexing="xy"), -1)
                 real_grid = einops.rearrange(xy, "x y c-> (x y) c")
-                pos = real_grid[index[idx]]
-                rot = pred_rot[index[idx]]
+                pos = real_grid[pred_pos[idx]]
+                rot = pred_rot[idx]
                 if self.only_rotation:
                     pos = gt_pos
                 n_patches = batch.patches_dim[i]
