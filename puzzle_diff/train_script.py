@@ -11,6 +11,7 @@ import math
 import random
 import string
 
+import matplotlib
 import pytorch_lightning as pl
 from dataset import dataset_utils as du
 from model import spatial_diffusion as sd
@@ -20,6 +21,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 from pytorch_lightning.loggers import WandbLogger
 
 import wandb
+
+matplotlib.use("qtagg")
 
 
 def get_random_string(length):
@@ -49,6 +52,7 @@ def main(
     discrete,
     loss_type,
     only_rotation,
+    cold_diffusion,
 ):
     ### Define dataset
 
@@ -84,6 +88,7 @@ def main(
             scheduler=sd.ModelScheduler.LINEAR,
             loss_type=loss_type,
             only_rotation=only_rotation,
+            cold_diffusion=cold_diffusion,
         )
     elif discrete:
         model = sdd.GNN_Diffusion(
@@ -119,7 +124,7 @@ def main(
 
     franklin = True if gpus > 1 else False
 
-    experiment_name = f"{dataset}-{puzzle_sizes}-{steps}-{get_random_string(6)}"
+    experiment_name = f"{dataset}-{puzzle_sizes}-{steps}-{get_random_string(6)}-{'discrete' if discrete else ''}"
 
     if rotation:
         experiment_name = "ROT-" + experiment_name
@@ -179,6 +184,7 @@ if __name__ == "__main__":
     ap.add_argument("--rotation", type=bool, default=False)
     ap.add_argument("--only_rotation", type=bool, default=False)
     ap.add_argument("--discrete", type=bool, default=False)
+    ap.add_argument("--cold_diffusion", type=bool, default=False)
     ap.add_argument("--loss_type", type=str, default="cross_entropy")
     args = ap.parse_args()
     print(args)
@@ -202,4 +208,5 @@ if __name__ == "__main__":
         discrete=args.discrete,
         loss_type=args.loss_type,
         only_rotation=args.only_rotation,
+        cold_diffusion=args.cold_diffusion,
     )

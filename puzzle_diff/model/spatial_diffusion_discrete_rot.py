@@ -38,8 +38,6 @@ from . import spatial_diffusion_discrete as sdd
 
 # import ark_TFConv, Eff_GAT, Eff_GAT_Discrete
 
-matplotlib.use("agg")
-
 
 def matrix_cumprod(matrixes, dim):
     cumprods = []
@@ -52,11 +50,12 @@ def matrix_cumprod(matrixes, dim):
 
 
 class GNN_Diffusion(sdd.GNN_Diffusion):
-    def __init__(self, only_rotation=False, *args, **kwargs):
+    def __init__(self, only_rotation=False, cold_diffusion=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Qs = []
         self.rot_K = 4
         self.only_rotation = only_rotation
+        self.cold_diffusion = cold_diffusion
         self.losses_keys = ["rot_loss"] if only_rotation else ["rot_loss", "x_loss"]
         for t in range(self.steps):
             beta_t = self.betas[t]
@@ -169,8 +168,10 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         edge_index=None,
         batch=None,
     ):
-        x_start_one_hot = torch.nn.functional.one_hot(x_start)
-        rot_start_one_hot = torch.nn.functional.one_hot(rot_start)
+        x_start_one_hot = torch.nn.functional.one_hot(x_start, num_classes=self.K)
+        rot_start_one_hot = torch.nn.functional.one_hot(
+            rot_start, num_classes=self.rot_K
+        )
 
         x_noisy = self.q_sample(
             x_start=x_start_one_hot, t=t, overline_Q=self.overline_Q
@@ -325,7 +326,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         gumbel_noise = -torch.log(-torch.log(noise))
         rot_sample = torch.argmax(logits + mask * gumbel_noise, -1)
 
-        return x_sample, rot_sample
+        return x_sample, torch.argmax(model_output_rot, 1), rot_sample
 
     # Algorithm 2 but save all images:
     @torch.no_grad()
@@ -339,9 +340,8 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         rot = torch.randint(0, self.rot_K, shape, device=device)
 
         imgs = []
-
-        patch_feats = self.visual_features(cond)
-
+        rot_acc = torch.zeros_like(rot)
+        cond_start = cond.clone()
         for i in tqdm(
             list(reversed(range(0, self.steps, self.inference_ratio))),
             desc="sampling loop time step",
@@ -349,7 +349,9 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             if self.only_rotation:
                 index = x_start
 
-            index, rot = self.p_sample(
+            patch_feats = self.visual_features(cond)
+
+            index, rot_0, rot_prev_t = self.p_sample(
                 index,
                 rot,
                 torch.full((b,), i, device=device, dtype=torch.long),
@@ -360,8 +362,15 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 patch_feats=patch_feats,
                 batch=batch,
             )
+            if self.cold_diffusion:
+                rot = rot_prev_t
+            else:
+                rot = rot_0
+            rot_acc += rot
+            rot_acc = rot_acc % self.rot_K
 
-            imgs.append((index, rot))
+            cond = rotate_images(cond_start, -rot_acc)
+            imgs.append((index, rot_acc))
         return imgs
 
     def validation_step(self, batch, batch_idx):
@@ -461,5 +470,5 @@ def cosine_beta_schedule(timesteps, s=0.008):
 def rotate_images(patches, rot_index):
     angles = (90 * rot_index).float()
     r = krot(angles, mode="nearest")
-    rot2 = r(patches)
+    rot = r(patches)
     return rot
