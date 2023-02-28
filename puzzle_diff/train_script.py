@@ -119,7 +119,7 @@ def main(
 
     franklin = True if gpus > 1 else False
 
-    experiment_name = f"{dataset}-{puzzle_sizes}-{steps}-{get_random_string(6)}"
+    experiment_name = f"{dataset}-{puzzle_sizes}-{steps}-{get_random_string(6)}-{'discrete' if discrete else 'continuous'}"
 
     if rotation:
         experiment_name = "ROT-" + experiment_name
