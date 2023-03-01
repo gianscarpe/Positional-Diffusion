@@ -22,7 +22,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 import wandb
 
-matplotlib.use("qtagg")
+# matplotlib.use("qtagg")
 
 
 def get_random_string(length):
