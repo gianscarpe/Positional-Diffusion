@@ -1,5 +1,6 @@
 import colorsys
 import enum
+import logging
 import math
 
 # from .backbones.Transformer_GNN import Transformer_GNN
@@ -38,8 +39,6 @@ from . import spatial_diffusion_discrete as sdd
 
 # import ark_TFConv, Eff_GAT, Eff_GAT_Discrete
 
-matplotlib.use("agg")
-
 
 def matrix_cumprod(matrixes, dim):
     cumprods = []
@@ -52,11 +51,12 @@ def matrix_cumprod(matrixes, dim):
 
 
 class GNN_Diffusion(sdd.GNN_Diffusion):
-    def __init__(self, only_rotation=False, *args, **kwargs):
+    def __init__(self, only_rotation=False, cold_diffusion=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Qs = []
         self.rot_K = 4
         self.only_rotation = only_rotation
+        self.cold_diffusion = cold_diffusion
         self.losses_keys = ["rot_loss"] if only_rotation else ["rot_loss", "x_loss"]
         for t in range(self.steps):
             beta_t = self.betas[t]
@@ -98,7 +98,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 batch=batch.batch,
                 x_start=batch.indexes % self.K,
             )
-            index, pred_rot = indexes[-1]
+            pred_pos, pred_rot = indexes[-1]
             rots = torch.tensor(
                 [
                     [1, 0],
@@ -114,7 +114,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             ):  # save max 4 images during training loop
                 idx = torch.where(batch.batch == i)[0]
                 patches_rgb = batch.patches[idx]
-                gt_pos = batch.x[idx]
+                gt_pos = batch.x[idx][:, :2]
                 gt_rot = batch.rot[idx]
 
                 n_patches = batch.patches_dim[i].tolist()
@@ -122,8 +122,8 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 x = torch.linspace(-1, 1, n_patches[1], device=self.device)
                 xy = torch.stack(torch.meshgrid(x, y, indexing="xy"), -1)
                 real_grid = einops.rearrange(xy, "x y c-> (x y) c")
-                pos = real_grid[index[idx]]
-                rot = pred_rot[index[idx]]
+                pos = real_grid[pred_pos[idx]]
+                rot = pred_rot[idx]
                 if self.only_rotation:
                     pos = gt_pos
                 n_patches = batch.patches_dim[i]
@@ -169,8 +169,10 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         edge_index=None,
         batch=None,
     ):
-        x_start_one_hot = torch.nn.functional.one_hot(x_start)
-        rot_start_one_hot = torch.nn.functional.one_hot(rot_start)
+        x_start_one_hot = torch.nn.functional.one_hot(x_start, num_classes=self.K)
+        rot_start_one_hot = torch.nn.functional.one_hot(
+            rot_start, num_classes=self.rot_K
+        )
 
         x_noisy = self.q_sample(
             x_start=x_start_one_hot, t=t, overline_Q=self.overline_Q
@@ -236,6 +238,39 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 K=self.rot_K,
                 overline_Q=self.overline_Q_rot,
             )
+        elif loss_type == "hybrid":
+            xstart_ce = F.cross_entropy(x_prediction, x_start, label_smoothing=1e-2)
+            rot_ce = F.cross_entropy(rot_prediction, rot_start)
+            model_logits_x = torch.where(
+                t[:, None].tile(x_prediction.shape[1]) == 0,
+                x_prediction,
+                self.q_posterior_logits(x_noisy, x_prediction, t, t - 1),
+            )
+            model_logits_rot = torch.where(
+                t[:, None].tile(rot_prediction.shape[1]) == 0,
+                rot_prediction,
+                self.q_posterior_logits(
+                    rot_noisy,
+                    rot_prediction,
+                    t,
+                    t - 1,
+                    K=self.rot_K,
+                    overline_Q=self.overline_Q_rot,
+                ),
+            )
+            x_vb = self.vb_terms_bpd(x_prediction, model_logits_x, x_start, x_noisy, t)
+            rot_vb = self.vb_terms_bpd(
+                rot_prediction,
+                model_logits_rot,
+                rot_start,
+                rot_noisy,
+                t,
+                K=self.rot_K,
+                overline_Q=self.overline_Q_rot,
+            )
+
+            x_loss = self.lambda_loss * xstart_ce + x_vb
+            rot_loss = self.lambda_loss * rot_ce + rot_vb
         else:
             raise Exception("Loss not implemented %s", loss_type)
 
@@ -292,7 +327,7 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         gumbel_noise = -torch.log(-torch.log(noise))
         rot_sample = torch.argmax(logits + mask * gumbel_noise, -1)
 
-        return x_sample, rot_sample
+        return x_sample, torch.argmax(model_output_rot, 1), rot_sample
 
     # Algorithm 2 but save all images:
     @torch.no_grad()
@@ -306,9 +341,8 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
         rot = torch.randint(0, self.rot_K, shape, device=device)
 
         imgs = []
-
-        patch_feats = self.visual_features(cond)
-
+        rot_acc = torch.zeros_like(rot)
+        cond_start = cond.clone()
         for i in tqdm(
             list(reversed(range(0, self.steps, self.inference_ratio))),
             desc="sampling loop time step",
@@ -316,7 +350,9 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
             if self.only_rotation:
                 index = x_start
 
-            index, rot = self.p_sample(
+            patch_feats = self.visual_features(cond)
+
+            index, rot_0, rot_prev_t = self.p_sample(
                 index,
                 rot,
                 torch.full((b,), i, device=device, dtype=torch.long),
@@ -327,9 +363,87 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 patch_feats=patch_feats,
                 batch=batch,
             )
+            if self.cold_diffusion:
+                rot = rot_prev_t
+            else:
+                rot = rot_0
+            rot_acc += rot
+            rot_acc = rot_acc % self.rot_K
 
-            imgs.append((index, rot))
+            cond = rotate_images(cond_start, -rot_acc)
+            imgs.append((index, rot_acc))
         return imgs
+
+    def on_predict_epoch_start(self):
+        logging.info(f"Saving to results/{self.logger.experiment.name}/preds")
+
+    def predict_step(self, batch, batch_idx):
+        with torch.no_grad():
+            preds = self.p_sample_loop(
+                batch.indexes.shape,
+                batch.patches,
+                batch.edge_index,
+                batch=batch.batch,
+                x_start=batch.indexes % self.K,
+            )
+
+            rots = torch.tensor(
+                [
+                    [1, 0],
+                    [0, 1],
+                    [-1, 0],
+                    [0, -1],
+                ]
+            )
+            for i in range(batch.batch.max() + 1):
+                for loop_index, pred_last_index in enumerate(preds):
+                    idx = torch.where(batch.batch == i)[0]
+                    patches_rgb = batch.patches[idx]
+
+                    gt_pos = batch.x[idx][:, :2]
+                    gt_index = batch.indexes[idx] % self.K
+                    gt_rots = batch.rot[idx]
+                    gt_rots_index = batch.rot_index[idx] % self.rot_K
+                    pred_index = pred_last_index[0][idx]
+                    pred_rots = pred_last_index[1][idx] % self.rot_K
+                    n_patches = batch.patches_dim[i].tolist()
+                    i_name = f"{batch.ind_name[i]:03d}_{loop_index:03d}"
+
+                    y = torch.linspace(-1, 1, n_patches[0], device=self.device)
+                    x = torch.linspace(-1, 1, n_patches[1], device=self.device)
+                    xy = torch.stack(torch.meshgrid(x, y, indexing="xy"), -1)
+                    real_grid = einops.rearrange(xy, "x y c-> (x y) c")
+                    pred_pos = real_grid[pred_index]
+
+                    correct = (pred_index == gt_index).all()
+                    rot_correct = (pred_rots == gt_rots_index).all()
+
+                    correct = (
+                        correct and rot_correct
+                        if not self.only_rotation
+                        else rot_correct
+                    )
+                    if self.only_rotation:
+                        pred_pos = gt_pos
+
+                    if (
+                        self.local_rank == 0
+                        and batch_idx < 10
+                        and i < min(batch.batch.max().item(), 4)
+                    ):
+                        save_path = Path(f"results/{self.logger.experiment.name}/preds")
+                        self.save_image_rotated(
+                            patches_rgb=patches_rgb,
+                            pos=pred_pos,
+                            gt_pos=gt_pos,
+                            patches_dim=n_patches,
+                            ind_name=i_name,
+                            file_name=save_path,
+                            correct=correct,
+                            gt_rotations=gt_rots,
+                            pred_rotations=rots[pred_rots],
+                        )
+            return preds
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
@@ -357,9 +471,9 @@ class GNN_Diffusion(sdd.GNN_Diffusion):
                 gt_pos = batch.x[idx][:, :2]
                 gt_index = batch.indexes[idx] % self.K
                 gt_rots = batch.rot[idx]
-                gt_rots_index = batch.rot_index[idx] % self.K
+                gt_rots_index = batch.rot_index[idx] % self.rot_K
                 pred_index = pred_last_index[0][idx]
-                pred_rots = pred_last_index[1][idx]
+                pred_rots = pred_last_index[1][idx] % self.rot_K
                 n_patches = batch.patches_dim[i].tolist()
                 i_name = batch.ind_name[i]
 
@@ -428,5 +542,5 @@ def cosine_beta_schedule(timesteps, s=0.008):
 def rotate_images(patches, rot_index):
     angles = (90 * rot_index).float()
     r = krot(angles, mode="nearest")
-    rot2 = r(patches)
+    rot = r(patches)
     return rot

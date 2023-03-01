@@ -29,7 +29,7 @@ class Eff_GAT_Discrete_ROT(nn.Module):
         self.rotation_channels = rotation_channels
         # visual_feats = 448  # hardcoded
 
-        self.combined_features_dim = 1088 + 32 + 32 + 32
+        self.combined_features_dim = 1088 + 32 + 32
 
         self.gnn_backbone = Transformer_GNN(
             self.combined_features_dim,
@@ -40,7 +40,6 @@ class Eff_GAT_Discrete_ROT(nn.Module):
 
         self.time_emb = nn.Embedding(steps, 32)
         self.pos_mlp = nn.Embedding(input_channels, 32)
-        self.rot_mlp = nn.Embedding(self.rotation_channels, 32)
 
         # self.GN = GraphNorm(self.combined_features_dim)
         self.mlp = nn.Sequential(
@@ -98,10 +97,9 @@ class Eff_GAT_Discrete_ROT(nn.Module):
         time_feats = self.time_emb(time)  # embedding, int -> 32
 
         pos_feats = self.pos_mlp(xy_pos)  # MLP, (x, y) -> 32
-        rot_feats = self.pos_mlp(rot)  # MLP, (x, y) -> 32
 
         # COMBINE  and transform with MLP
-        combined_feats = torch.cat([patch_feats, pos_feats, rot_feats, time_feats], -1)
+        combined_feats = torch.cat([patch_feats, pos_feats, time_feats], -1)
         combined_feats = self.mlp(combined_feats)
 
         # GNN

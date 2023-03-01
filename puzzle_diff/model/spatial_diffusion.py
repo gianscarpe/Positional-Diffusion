@@ -49,8 +49,6 @@ import wandb
 
 from .backbones import Dark_TFConv, Eff_GAT
 
-matplotlib.use("agg")
-
 
 class ModelMeanType(enum.Enum):
     """
@@ -429,7 +427,7 @@ class GNN_Diffusion(pl.LightningModule):
         if noise is None:
             noise = torch.randn_like(x_start)
 
-        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
+        xg_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
         if self.rotation:
             cond = rotate_images(cond, x_noisy[:, -2:])
 
