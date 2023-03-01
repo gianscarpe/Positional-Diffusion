@@ -51,9 +51,11 @@ def matrix_cumprod(matrixes, dim):
 class GNN_Diffusion(sd.GNN_Diffusion):
     def __init__(self, puzzle_sizes, loss_type="vb", lambda_loss=0.01, *args, **kwargs):
         K = puzzle_sizes[0][0] * puzzle_sizes[0][1]
+        if "input_channels" not in kwargs:
+            kwargs["input_channels"] = K
+        if "output_channels" not in kwargs:
+            kwargs["output_channels"] = K
         super().__init__(
-            input_channels=K,
-            output_channels=K,
             *args,
             **kwargs,
         )
