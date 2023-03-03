@@ -1,5 +1,6 @@
 import colorsys
 import enum
+import logging
 import math
 
 # from .backbones.Transformer_GNN import Transformer_GNN
@@ -653,7 +654,7 @@ class GNN_Diffusion(pl.LightningModule):
             #         w1=self.patches,
             #     )
             #     imgs.append(img2.cpu().numpy())
-        imgs.append(img)
+            imgs.append(img)
         return imgs
 
     @torch.no_grad()
@@ -874,6 +875,48 @@ class GNN_Diffusion(pl.LightningModule):
 
     # def validation_step(self, batch, batch_idx, *args, **kwargs):
     # return self.test_step(batch, batch_idx, *args, **kwargs)
+    def on_predict_epoch_start(self):
+        logging.info(f"Saving to results/{self.logger.experiment.name}/preds")
+
+    def predict_step(self, batch, batch_idx):
+        with torch.no_grad():
+            preds = self.p_sample_loop(
+                batch.x.shape, batch.patches, batch.edge_index, batch=batch.batch
+            )
+
+            for i in range(batch.batch.max() + 1):
+                for k, img in enumerate(preds):
+                    idx = torch.where(batch.batch == i)[0]
+                    patches_rgb = batch.patches[idx]
+                    gt_pos = batch.x[idx, :2]
+                    pos = img[idx, :2]
+                    n_patches = batch.patches_dim[i].tolist()
+                    i_name = batch.ind_name[i]
+
+                    y = torch.linspace(-1, 1, n_patches[0], device=self.device)
+                    x = torch.linspace(-1, 1, n_patches[1], device=self.device)
+                    xy = torch.stack(torch.meshgrid(x, y, indexing="xy"), -1)
+                    real_grid = einops.rearrange(xy, "x y c-> (x y) c")
+
+                    gt_ass = greedy_cost_assignment(gt_pos, real_grid)
+                    sort_idx = torch.sort(gt_ass[:, 0])[1]
+                    gt_ass = gt_ass[sort_idx]
+
+                    pred_ass = greedy_cost_assignment(pos, real_grid)
+                    sort_idx = torch.sort(pred_ass[:, 0])[1]
+                    pred_ass = pred_ass[sort_idx]
+                    i_name = f"{batch.ind_name[i]:03d}_{k:03d}"
+                    save_path = Path(f"results/{self.logger.experiment.name}/val")
+                    correct = (gt_ass[:, 1] == pred_ass[:, 1]).all()
+                    self.save_image(
+                        patches_rgb=patches_rgb,
+                        pos=pos,
+                        gt_pos=gt_pos,
+                        patches_dim=n_patches,
+                        ind_name=i_name,
+                        file_name=save_path,
+                        correct=correct,
+                    )
 
     def create_image_from_patches(
         self, patches, pos, n_patches=(4, 4), i=0, rotations=None

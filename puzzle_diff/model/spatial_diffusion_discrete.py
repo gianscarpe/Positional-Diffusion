@@ -1,5 +1,6 @@
 import colorsys
 import enum
+import logging
 import math
 
 # from .backbones.Transformer_GNN import Transformer_GNN
@@ -137,6 +138,43 @@ class GNN_Diffusion(sd.GNN_Diffusion):
         self.log("loss", loss)
 
         return loss
+
+    def on_predict_epoch_start(self):
+        logging.info(f"Saving to results/{self.logger.experiment.name}/preds")
+
+    def predict_step(self, batch, batch_idx):
+        with torch.no_grad():
+            preds = self.p_sample_loop(
+                batch.indexes.shape, batch.patches, batch.edge_index, batch=batch.batch
+            )
+            for i in range(batch.batch.max() + 1):
+                for loop_index, pred_last_index in enumerate(preds):
+                    idx = torch.where(batch.batch == i)[0]
+                    patches_rgb = batch.patches[idx]
+                    gt_pos = batch.x[idx]
+                    gt_index = batch.indexes[idx] % self.K
+
+                    pred_index = pred_last_index[idx]
+                    n_patches = batch.patches_dim[i].tolist()
+                    i_name = f"{batch.ind_name[i]:03d}_{loop_index:03d}"
+
+                    y = torch.linspace(-1, 1, n_patches[0], device=self.device)
+                    x = torch.linspace(-1, 1, n_patches[1], device=self.device)
+                    xy = torch.stack(torch.meshgrid(x, y, indexing="xy"), -1)
+                    real_grid = einops.rearrange(xy, "x y c-> (x y) c")
+                    pred_pos = real_grid[pred_index]
+
+                    correct = (pred_index == gt_index).all()
+                    save_path = Path(f"results/{self.logger.experiment.name}/val")
+                    self.save_image(
+                        patches_rgb=patches_rgb,
+                        pos=pred_pos,
+                        gt_pos=gt_pos,
+                        patches_dim=n_patches,
+                        ind_name=i_name,
+                        file_name=save_path,
+                        correct=correct,
+                    )
 
     # forward diffusion
     def q_sample(self, x_start, t, overline_Q=None, eps=1e-9):
