@@ -616,7 +616,7 @@ class GNN_Diffusion(pl.LightningModule):
         #     h1=self.patches,
         #     w1=self.patches,
         # )
-        imgs = []
+        imgs = [img]
 
         patch_feats = self.visual_features(cond)
 
@@ -955,7 +955,9 @@ class GNN_Diffusion(pl.LightningModule):
         file_name.mkdir(parents=True, exist_ok=True)
 
         fig, ax = plt.subplots(2, 2)
-
+        plt.xlim(-1.3, 1.3)
+        plt.ylim(-1.3, 1.3)
+        plt.axis("off")
         gt_img = self.create_image_from_patches(
             patches_rgb, gt_pos, n_patches=patches_dim, i=ind_name
         )
