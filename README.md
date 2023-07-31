@@ -12,10 +12,6 @@ the second-best deep learning method, and performs on par against the
 state-of-the-art methods on sentence ordering and visual storytelling. Our work
 highlights the suitability of diffusion models for ordering problems and
 proposes a novel formulation and method for solving various ordering tasks.
-
-- [Webpage](https://iit-pavis.github.io/Positional_Diffusion/)
-- [Code](https://github.com/IIT-PAVIS/Positional_Diffusion/)
-- [Arxiv](https://arxiv.org/abs/2303.11120)
 - Demo WIP
 
 ![Method](https://raw.githubusercontent.com/IIT-PAVIS/Positional_Diffusion/release/page/PosRes_Method.jpg)
@@ -97,19 +93,4 @@ python puzzle_diff/train_vist.py -dataset sind -inference_ratio 10 -sampling DDI
 Given the path for a model checkpoint /path/to/ckpt, specify the path for continuing training, as:
 ```
 ... --checkpoint_path /path/to/ckpt
-```
-
-## Pretrained models
-We plan to release our pre-trained models for all tasks.
-
-# Cite us!
-```
-@misc{giuliari2023positional,
-      title={Positional Diffusion: Ordering Unordered Sets with Diffusion Probabilistic Models},
-      author={Francesco Giuliari and Gianluca Scarpellini and Stuart James and Yiming Wang and Alessio {Del Bue}},
-      year={2023},
-      eprint={2303.11120},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV}
-}
 ```
