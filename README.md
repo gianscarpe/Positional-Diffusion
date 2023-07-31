@@ -12,7 +12,6 @@ the second-best deep learning method, and performs on par against the
 state-of-the-art methods on sentence ordering and visual storytelling. Our work
 highlights the suitability of diffusion models for ordering problems and
 proposes a novel formulation and method for solving various ordering tasks.
-- Demo WIP
 
 ![Method](https://raw.githubusercontent.com/IIT-PAVIS/Positional_Diffusion/release/page/PosRes_Method.jpg)
 
