@@ -33,6 +33,9 @@ proposes a novel formulation and method for solving various ordering tasks.
 - Json file: https://visionandlanguage.net/VIST/json_files/story-in-sequence/SIS-with-labels.tar.gz
 - Use our script to download training and test images, given the raw json file for VIST
 
+## Rooms
+- Code and dataset at [Link](https://github.com/QiuhongAnnaWei/LEGO-Net/tree/main)
+
 # Environment
 - We provide the environment definition in `singularity/build/conda_env.yaml`
 - Singularity image is also available at [WIP]
@@ -87,6 +90,8 @@ python puzzle_diff/train_vist.py -dataset sind -inference_ratio 10 -sampling DDI
 ```
 ![VIST](https://raw.githubusercontent.com/IIT-PAVIS/Positional_Diffusion/release/page/vist/gif_vist_1024.gif)
 
+## Room Rearrangement
+- WIP
 
 ## Additional parameters
 Given the path for a model checkpoint /path/to/ckpt, specify the path for continuing training, as:
