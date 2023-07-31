@@ -1,3 +1,5 @@
+# Positional Diffusion: Ordering Unordered Sets with Diffusion Probabilistic Models
+
 Positional reasoning is the process of ordering unsorted parts contained in a
 set into a consistent structure. We present Positional Diffusion, a
 plug-and-play graph formulation with Diffusion Probabilistic Models to address
