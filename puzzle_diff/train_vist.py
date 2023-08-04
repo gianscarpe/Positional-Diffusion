@@ -18,7 +18,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 from pytorch_lightning.loggers import WandbLogger
 
 import wandb
-
+import torch
+torch.manual_seed(1)
 
 def get_random_string(length):
     # choose from all lowercase letter
